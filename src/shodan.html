@@ -1,0 +1,439 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>fofa-查询</title>
+    <link rel="stylesheet" href="assets/lib/layui/css/layui.css">
+    <link rel="stylesheet" href="assets/css/base.css">
+    <link rel="stylesheet" href="assets/font/iconfont.css">
+    <style>
+        .shodan-upload {
+            background-color: #4778C7;
+            height: 26px;
+            line-height: 26px;
+            font-size: 12px;
+            margin-left: 15px;
+            width: 30px;
+            display: inline-block;
+            text-align: center;
+            background-color: rgba(71, 120, 199, 1);
+            border-radius: 4px;
+        }
+
+        .iconshodanupload {
+            color: white;
+            font-size: 12px;
+        }
+
+        .iconsplit {
+            margin: 0px 2px;
+        }
+    </style>
+</head>
+
+<body style="width: auto;height: auto">
+<div class="layui-form-item clearfix">
+    <div class="layui-input-block marLeft0 fl search-input-wrap">
+        <input id="fofa-input" type="text" name="title" required lay-verify="required" placeholder="请输入查询规则"
+               autocomplete="off"
+               class="layui-input">
+        <span class="fofa-search"><i class="iconfont iconfangdajing"></i></span>
+
+    </div>
+    <div>
+        <input type="file" style="display:none" id="shodan-files"/>
+        <span title="导入 shodan json 文件" class="shodan-upload iconsplit fl" lay-submit lay-filter=""><i
+                class="iconfont iconshodanupload iconExport-" onclick="readjson()"></i></span>
+    </div>
+    <!--    <span class="add-poc-btn el-tooltip poc-ex-im im"><i class="iconfont iconImport-"></i></span>-->
+
+    <button id="shodan-export-btn" class="layui-btn export-ip iconsplit" lay-submit lay-filter="formDemo">导入/0条</button>
+</div>
+<div class="layui-table-wrap">
+    <table lay-filter="demo" id="ip-table" class="layui-table">
+        <thead>
+        <tr>
+            <th min-width="50">IP</th>
+            <th min-width="50">端口</th>
+            <th min-width="50">组织</th>
+            <th min-width="50">位置</th>
+        </tr>
+        </thead>
+        <tbody>
+        <tr>
+        </tr>
+        </tbody>
+    </table>
+    <div class="no-data">
+    </div>
+    <div class="loading">
+        <i class="layui-icon layui-icon-loading layui-anim layui-anim-rotate layui-anim-loop"></i>
+    </div>
+</div>
+<div id="page"></div>
+
+<script src="assets/js/jquery-3.3.1.min.js"></script>
+<script src="assets/js/jquery.base64.js"></script>
+<script src="assets/lib/layui/layui.all.js"></script>
+<script>
+
+
+    let goby = parent.goby; // 获取GobyAPi
+    let results = []; // 定义搜索结果数组
+    let htmlTable = ""
+
+    let inputElement = document.getElementById("shodan-files");
+    inputElement.addEventListener("change", handleFiles, false);
+
+    function handleFiles() {
+        $(".loading").show();
+        var lr = new LineReader();
+        var file = $('#shodan-files').get(0).files[0];
+        var totalCount = 0;
+
+        lr.on('line', function (line, next) {
+            singleAssert = JSON.parse(line)
+            results.push({
+                "ip_str": singleAssert.ip_str,
+                "port": singleAssert.port
+            })
+
+            htmlTable += `<tr><td>${singleAssert.ip_str}</td>
+            <td>${singleAssert.port}</td>
+            <td>${singleAssert.org}</td>
+            <td>${singleAssert.location.country_name}</td></tr>`
+
+            // console.log(htmlTable)
+            totalCount++;
+            if (totalCount % 10 == 0) {
+                $("#ip-table tbody").html(htmlTable);
+            }
+            $("#shodan-export-btn").text("导入/" + totalCount + "条")
+            next();
+
+        });
+
+        lr.on('error', function (err) {
+            console.log(err);
+        });
+
+        lr.on('end', function () {
+            $(".loading").hide();
+            $("#ip-table tbody").html(htmlTable);
+            console.log('Read complete!');
+        });
+
+        lr.read(file);
+
+    }
+
+    // 查询数据
+    function getData(page, type) {
+        $(".no-data").hide();
+        $(".loading").show();
+        $("#ip-table tbody").html("");
+        let config = goby.getConfiguration(); // 获取插件配置
+        let key = config.Key.default;
+        let content = $("#fofa-input").val(); // 调用shodanApi搜索
+        let enurl = encodeURI(content);
+        let url = `https://api.shodan.io/shodan/host/search?key=${key}&query=${enurl}&page=${page}`;
+        $.ajax({
+            type: "get",
+            url: url,
+            contentType: 'application/x-www-form-urlencoded;charset=utf-8',
+            dataType: "json",
+            success(res) {
+                results = res.matches;
+                if (results && results.length > 0) {
+                    let html = "";
+                    results.forEach((v, k) => {
+                        html += `<tr>
+                  <td>${v.ip_str}</td>
+                  <td>${v.port}</td>
+                  <td>${v.org}</td>
+                  <td>${v.location.country_name}</td>
+                </tr>`
+
+
+                    })
+                    $("#shodan-export-btn").text("导入/" + results.length  + "条")
+                    $("#ip-table tbody").html(html);
+                    if (type) {
+                        var laypage = layui.laypage;
+                        laypage.render({
+                            elem: 'page',
+                            limit: 100,
+                            count: res.total,
+                            jump: function (obj, first) {
+                                getData(obj.curr);
+                            }
+                        });
+                    }
+                } else {
+                    $(".no-data").show();
+                    $("#ip-table tbody").html("");
+                    $(".no-data").html(content + " 0");
+                }
+                $(".loading").hide();
+            },
+            error(res) {
+                goby.showErrorMessage(JSON.parse(res.responseText).errmsg);
+                $(".no-data").html(JSON.parse(res.responseText).errmsg);
+
+                results = [];
+                let html = "";
+                $("#ip-table tbody").html(html);
+                $(".no-data").show();
+                $(".loading").hide();
+            }
+        });
+    }
+
+    // 回车搜索
+    $("#fofa-input").keydown(function (e) {
+        if (e.keyCode == 13) {
+            getData(1, 1);
+        }
+    });
+
+    // 按钮搜索
+    $(".fofa-search").click(function () {
+        getData(1, 1);
+    });
+
+    // 导出Ip和端口
+    $(".export-ip").on("click", function () {
+        if (results && results.length > 0) {
+            let ips = [];
+            let ports = [];
+            console.log("result---length"+results.length)
+            results.forEach((v, k) => {
+                ips.push(v.ip_str);
+                ports.push(v.port);
+            })
+            console.log("ips---length"+ips.length)
+            goby.addScanIps(ips, 1);
+            goby.addScanPorts(ports, 1);
+            goby.showSuccessMessage("导入扫描对象成功");
+            goby.closeIframeDia();
+        } else {
+            goby.showInformationMessage("导入对象不能为空");
+        }
+    })
+
+
+    function readjson() {
+        $("#shodan-files").click()
+    }
+
+    // https://blog.csdn.net/wulex/article/details/51924267
+
+    var LineReader = function (options) {
+
+        if (!(this instanceof LineReader)) {
+            return new LineReader(options);
+        }
+
+        var internals = this._internals = {};
+        var self = this;
+
+        internals.reader = new FileReader();
+
+        internals.chunkSize = (options && options.chunkSize) ? options.chunkSize : 1024;
+
+        /**
+         * 让我们创建一个对象来让用户定义的事件回调
+         */
+        internals.events = {};
+
+        /**
+         * 'canRead' 将被设置为false，如果在的FileReader＃中止方法被触发
+         */
+        internals.canRead = true;
+
+        internals.reader.onload = function () {
+
+            internals.chunk += this.result;
+
+            /**
+             *如果处理的文本包含一个换行符
+             */
+            if (/\r|\n/.test(internals.chunk)) {
+                /**
+                 * 拆分文本行的数组
+                 */
+                internals.lines = internals.chunk.match(/[^\r\n]+/g);
+
+                /**
+                 *如果仍有更多的数据读取，保存最后一行，因为它可能是不完整的
+                 */
+                if (self._hasMoreData()) {
+                    /**
+                     * 如果装入块以\n换行符结束，最后一行是完整的，我们并不需要存储它
+                     */
+                    internals.chunk = internals.chunk[internals.chunk.length - 1] === '\n' ?
+                        '' :
+                        internals.lines.pop();
+                }
+
+                self._step();
+
+                /**
+                 *如果文本不包含换行符
+                 */
+            } else {
+
+                /**
+                 * 启动新一轮的读取过程，如果还有读取数据
+                 */
+                if (self._hasMoreData()) {
+                    return self.read();
+                }
+
+                /**
+                 * 如果没有数据剩下被读取，但仍然有存储在“块”的数据，发出它作为一行
+                 */
+                if (internals.chunk.length) {
+                    return self._emit('line', [
+                        internals.chunk,
+                        self._emit.bind(self, 'end')
+                    ]);
+                }
+
+                /**
+                 * 如果没有存储在“块”的数据，发出结束事件
+                 */
+                self._emit('end');
+            }
+        };
+
+
+        internals.reader.onerror = function () {
+            /**
+             * 发出错误事件，沿着错误对象给回调传递“这”指针“的FileReader”实例
+             */
+            self._emit('error', [this.error]);
+        };
+    };
+
+
+    /**
+     *事件绑定
+     * @eventName- 绑定到事件的名称
+     * @ - 当事件触发执行函数
+     */
+    LineReader.prototype.on = function (eventName, cb) {
+        this._internals.events[eventName] = cb;
+    };
+
+
+    LineReader.prototype.read = function (file) {
+        var internals = this._internals;
+
+        /**
+         * 如果“文件”是定义有效的，那么我们希望得到一些关于它的信息和重置 'readPos', 'chunk', and 'lines'
+         */
+        if (typeof file !== 'undefined') {
+            internals.file = file;
+            internals.fileLength = file.size;
+            internals.readPos = 0;
+            internals.chunk = '';
+            internals.lines = [];
+        }
+
+        /**
+         * 提取该文件的部分用于阅读开始 'readPos' and 结束于 'readPos + chunkSize'
+         */
+        var blob = internals.file.slice(internals.readPos, internals.readPos + internals.chunkSize);
+
+        /**
+         * 更新当前读取位置
+         */
+        internals.readPos += internals.chunkSize;
+
+        /**
+         * 阅读blob 作为 文本
+         */
+        internals.reader.readAsText(blob, "UTF-8");
+    };
+
+
+    /**
+     * 停止读取过程
+     */
+    LineReader.prototype.abort = function () {
+        this._internals.canRead = false;
+    };
+
+
+    /**
+     * LineReader#_step
+     *
+     * Internal:获取下一行并发送它作为一个`line`事件
+     */
+    LineReader.prototype._step = function () {
+        var internals = this._internals;
+
+        /**
+         * 如果没有行剩下发送，但仍有数据剩下被读取，
+         *再次启动读进程，否则发送“结束”事件
+         */
+        if (internals.lines.length === 0) {
+            if (this._hasMoreData()) {
+                return this.read();
+            }
+            return this._emit('end');
+        }
+
+        /**
+         * 如果读数进程尚未终止，发送的第一元素在行数组，并在用户通过_step“ 准备调用下一行。我们必须绑定“_step'到'this'，
+         *否则这将是在错误的范围内调用它
+         */
+        if (internals.canRead) {
+            this._emit('line', [
+                internals.lines.shift(),
+                this._step.bind(this)
+            ]);
+        } else {
+            /**
+             *如果我们不能读，发出“结束”事件
+             */
+            this._emit('end');
+        }
+    };
+
+
+    /**
+     * Internal: 确定是否还有更多的数据读取。
+     */
+    LineReader.prototype._hasMoreData = function () {
+        var internals = this._internals;
+        return internals.readPos <= internals.fileLength;
+    };
+
+    /**
+     *处理事件的发送
+     * @ - 发生事件的名称
+     * @ - 参数数组来发送到事件回调函数
+     */
+    LineReader.prototype._emit = function (event, args) {
+        var boundEvents = this._internals.events;
+
+        /**
+         * 如果用户已经绑定请求事件
+         */
+        if (typeof boundEvents[event] === 'function') {
+            /**
+             * Use apply to ensure correct scope, and pass in the 'args' array to
+             * be used as arguments for the callback 使用apply确保正确的范围，传递'args'数组作参数用于为回调
+             */
+            boundEvents[event].apply(this, args);
+        }
+    };
+</script>
+</body>
+
+</html>
+
+

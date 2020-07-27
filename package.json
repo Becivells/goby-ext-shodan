@@ -1,0 +1,32 @@
+{
+	"name": "shodan",
+	"publisher": "lidazhuang",
+	"description": "将通过 shodan 查询的 IP 和端口，快速导入 goby 进行扫描。支持导入 shodan 下载的 json 文件",
+	"version": "0.0.2",
+	"icon": "src/assets/img/shodan.png",
+	"engines": "1.6.170",
+	"initEvents": "",
+	"main": "./src/extension.js",
+	"contributes": {
+		"configuration": {
+			"Key": {
+				"type": "string",
+				"default": "",
+				"description": "Shodan Key"
+			}
+		},
+		"views": {
+			"scanDia": [
+				{
+					"command": "shodan",
+					"title": "",
+					"icon": "src/assets/img/shodan.png"
+				}
+			]
+		}
+	},
+	"scripts": {},
+	"devDependencies": {},
+	"dependencies": {
+	}
+}
